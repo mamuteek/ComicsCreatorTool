@@ -2,7 +2,20 @@ import React, { useRef, useState } from 'react';
 import { Stage, Layer, Rect } from 'react-konva';
 import { ComicPage, ComicPanel, SpeechBubble, BubbleType } from '../../types/comic';
 import { PanelItem } from './PanelItem';
-import { MessageSquare, Cloud, AlertCircle, Type, Trash2, Wand2, RefreshCw } from 'lucide-react';
+import {
+  MessageSquare,
+  Cloud,
+  AlertCircle,
+  Type,
+  Trash2,
+  Wand2,
+  RefreshCw,
+  Move,
+  Maximize2,
+  PlusSquare,
+  Copy,
+  Sliders,
+} from 'lucide-react';
 import { LAYOUT_TEMPLATES } from '../../data/defaultLayouts';
 
 interface Props {
@@ -21,6 +34,7 @@ export const ComicCanvas: React.FC<Props> = ({
     page.panels[0]?.id || null
   );
   const [selectedBubbleId, setSelectedBubbleId] = useState<string | null>(null);
+  const [panelEditMode, setPanelEditMode] = useState<'frame' | 'image'>('frame');
 
   // A4 dimensions in pixels for standard screen rendering (Width: 650px, Height: 919px)
   const STAGE_WIDTH = 650;
@@ -48,6 +62,9 @@ export const ComicCanvas: React.FC<Props> = ({
         characterIds: existing?.characterIds || [],
         imagePrompt: existing?.imagePrompt || '',
         imageUrl: existing?.imageUrl,
+        imageScale: existing?.imageScale || 1.0,
+        imageOffsetX: existing?.imageOffsetX || 0,
+        imageOffsetY: existing?.imageOffsetY || 0,
         bubbles: existing?.bubbles || [],
       };
     });
@@ -57,6 +74,73 @@ export const ComicCanvas: React.FC<Props> = ({
       layoutTemplate: templateId,
       panels: newPanels,
     });
+    if (newPanels.length > 0) {
+      setSelectedPanelId(newPanels[0].id);
+    }
+  };
+
+  // Add a new custom panel freely
+  const handleAddNewPanel = () => {
+    const newPanel: ComicPanel = {
+      id: `panel-${Date.now()}`,
+      order: page.panels.length + 1,
+      x: 10 + (page.panels.length % 3) * 5,
+      y: 10 + (page.panels.length % 3) * 5,
+      width: 45,
+      height: 35,
+      shotType: 'medium-shot',
+      description: `Panel ${page.panels.length + 1} scene`,
+      characterIds: [],
+      imagePrompt: '',
+      imageScale: 1.0,
+      imageOffsetX: 0,
+      imageOffsetY: 0,
+      bubbles: [],
+    };
+
+    onUpdatePage({
+      ...page,
+      panels: [...page.panels, newPanel],
+    });
+    setSelectedPanelId(newPanel.id);
+  };
+
+  // Duplicate selected panel
+  const handleDuplicatePanel = () => {
+    if (!selectedPanel) return;
+
+    const duplicated: ComicPanel = {
+      ...selectedPanel,
+      id: `panel-${Date.now()}`,
+      order: page.panels.length + 1,
+      x: Math.min(50, selectedPanel.x + 5),
+      y: Math.min(50, selectedPanel.y + 5),
+      bubbles: selectedPanel.bubbles.map((b) => ({
+        ...b,
+        id: `bubble-${Date.now()}-${Math.random()}`,
+      })),
+    };
+
+    onUpdatePage({
+      ...page,
+      panels: [...page.panels, duplicated],
+    });
+    setSelectedPanelId(duplicated.id);
+  };
+
+  // Delete selected panel
+  const handleDeletePanel = () => {
+    if (!selectedPanelId || page.panels.length <= 1) return;
+
+    const remaining = page.panels
+      .filter((p) => p.id !== selectedPanelId)
+      .map((p, idx) => ({ ...p, order: idx + 1 }));
+
+    onUpdatePage({
+      ...page,
+      panels: remaining,
+    });
+    setSelectedPanelId(remaining[0]?.id || null);
   };
 
   // Add speech bubble to selected panel
@@ -119,67 +203,116 @@ export const ComicCanvas: React.FC<Props> = ({
     <div className="flex flex-col lg:flex-row gap-6 items-start justify-center p-4">
       {/* Canvas Area */}
       <div className="flex flex-col items-center">
-        {/* Canvas Toolbar */}
-        <div className="flex flex-wrap items-center gap-2 bg-slate-800 border border-slate-700 p-2 rounded-xl mb-4 shadow-lg w-full max-w-[650px]">
-          <span className="text-xs font-semibold text-slate-400 px-2 uppercase">Layout:</span>
-          <select
-            value={page.layoutTemplate}
-            onChange={(e) => handleApplyLayout(e.target.value as any)}
-            className="bg-slate-900 border border-slate-700 text-xs text-white rounded px-2 py-1.5 focus:outline-none focus:border-blue-500"
-          >
-            {LAYOUT_TEMPLATES.map((tmpl) => (
-              <option key={tmpl.id} value={tmpl.id}>
-                {tmpl.name}
-              </option>
-            ))}
-          </select>
+        {/* Top Controls Toolbar */}
+        <div className="flex flex-wrap items-center justify-between gap-2 bg-slate-800/90 border border-slate-700 p-2.5 rounded-xl mb-4 shadow-lg w-full max-w-[650px]">
+          {/* Layout presets */}
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-semibold text-slate-400">Presets:</span>
+            <select
+              value={page.layoutTemplate}
+              onChange={(e) => handleApplyLayout(e.target.value as any)}
+              className="bg-slate-900 border border-slate-700 text-xs text-white rounded-lg px-2 py-1.5 focus:outline-none focus:border-blue-500"
+            >
+              {LAYOUT_TEMPLATES.map((tmpl) => (
+                <option key={tmpl.id} value={tmpl.id}>
+                  {tmpl.name}
+                </option>
+              ))}
+            </select>
+          </div>
 
-          <div className="h-4 w-px bg-slate-700 mx-1" />
+          {/* Panel Management Buttons */}
+          <div className="flex items-center gap-1.5">
+            <button
+              onClick={handleAddNewPanel}
+              className="flex items-center gap-1 bg-slate-700 hover:bg-slate-600 px-2.5 py-1.5 rounded-lg text-xs font-medium text-white transition"
+              title="Add a custom panel anywhere on page"
+            >
+              <PlusSquare className="w-3.5 h-3.5 text-blue-400" />
+              Add Panel
+            </button>
+            {selectedPanel && (
+              <>
+                <button
+                  onClick={handleDuplicatePanel}
+                  className="p-1.5 bg-slate-700 hover:bg-slate-600 rounded-lg text-slate-300 hover:text-white transition"
+                  title="Duplicate selected panel"
+                >
+                  <Copy className="w-3.5 h-3.5" />
+                </button>
+                {page.panels.length > 1 && (
+                  <button
+                    onClick={handleDeletePanel}
+                    className="p-1.5 bg-rose-600/20 hover:bg-rose-600/30 text-rose-300 rounded-lg border border-rose-500/30 transition"
+                    title="Delete selected panel"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </>
+            )}
+          </div>
+        </div>
+
+        {/* Secondary Sub-toolbar: Edit Mode Toggle & Speech Bubbles */}
+        <div className="flex flex-wrap items-center justify-between gap-2 bg-slate-900/80 border border-slate-800 px-3 py-2 rounded-xl mb-3 shadow w-full max-w-[650px]">
+          {/* Interaction Mode Toggle */}
+          <div className="flex items-center bg-slate-950 p-0.5 rounded-lg border border-slate-800">
+            <button
+              onClick={() => setPanelEditMode('frame')}
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-semibold transition ${
+                panelEditMode === 'frame'
+                  ? 'bg-blue-600 text-white shadow'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <Maximize2 className="w-3.5 h-3.5" />
+              Drag / Resize Frame
+            </button>
+            <button
+              onClick={() => setPanelEditMode('image')}
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-semibold transition ${
+                panelEditMode === 'image'
+                  ? 'bg-blue-600 text-white shadow'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <Move className="w-3.5 h-3.5" />
+              Pan / Scale Image
+            </button>
+          </div>
 
           {/* Add Bubbles */}
-          <span className="text-xs font-semibold text-slate-400 px-2 uppercase">Add Bubble:</span>
-          <button
-            onClick={() => handleAddBubble('speech')}
-            className="flex items-center gap-1 bg-slate-700 hover:bg-slate-600 px-2 py-1 rounded text-xs text-white transition"
-            title="Speech Bubble"
-          >
-            <MessageSquare className="w-3.5 h-3.5 text-blue-400" />
-            Speech
-          </button>
-          <button
-            onClick={() => handleAddBubble('thought')}
-            className="flex items-center gap-1 bg-slate-700 hover:bg-slate-600 px-2 py-1 rounded text-xs text-white transition"
-            title="Thought Bubble"
-          >
-            <Cloud className="w-3.5 h-3.5 text-cyan-400" />
-            Thought
-          </button>
-          <button
-            onClick={() => handleAddBubble('shout')}
-            className="flex items-center gap-1 bg-slate-700 hover:bg-slate-600 px-2 py-1 rounded text-xs text-white transition"
-            title="Shout / Action Bubble"
-          >
-            <AlertCircle className="w-3.5 h-3.5 text-amber-400" />
-            Shout
-          </button>
-          <button
-            onClick={() => handleAddBubble('caption')}
-            className="flex items-center gap-1 bg-slate-700 hover:bg-slate-600 px-2 py-1 rounded text-xs text-white transition"
-            title="Narration Caption"
-          >
-            <Type className="w-3.5 h-3.5 text-emerald-400" />
-            Caption
-          </button>
-
-          {selectedBubbleId && (
+          <div className="flex items-center gap-1">
             <button
-              onClick={handleDeleteBubble}
-              className="ml-auto flex items-center gap-1 bg-rose-600/20 hover:bg-rose-600/30 text-rose-300 border border-rose-500/30 px-2 py-1 rounded text-xs transition"
+              onClick={() => handleAddBubble('speech')}
+              className="p-1.5 bg-slate-800 hover:bg-slate-700 rounded-lg text-xs text-blue-400 transition"
+              title="Add Speech Bubble"
             >
-              <Trash2 className="w-3.5 h-3.5" />
-              Delete Bubble
+              <MessageSquare className="w-4 h-4" />
             </button>
-          )}
+            <button
+              onClick={() => handleAddBubble('thought')}
+              className="p-1.5 bg-slate-800 hover:bg-slate-700 rounded-lg text-xs text-cyan-400 transition"
+              title="Add Thought Bubble"
+            >
+              <Cloud className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => handleAddBubble('shout')}
+              className="p-1.5 bg-slate-800 hover:bg-slate-700 rounded-lg text-xs text-amber-400 transition"
+              title="Add Shout Bubble"
+            >
+              <AlertCircle className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => handleAddBubble('caption')}
+              className="p-1.5 bg-slate-800 hover:bg-slate-700 rounded-lg text-xs text-emerald-400 transition"
+              title="Add Narration Caption"
+            >
+              <Type className="w-4 h-4" />
+            </button>
+          </div>
         </div>
 
         {/* Konva Stage Container with A4 White Canvas */}
@@ -189,7 +322,6 @@ export const ComicCanvas: React.FC<Props> = ({
             width={STAGE_WIDTH}
             height={STAGE_HEIGHT}
             onMouseDown={(e) => {
-              // Clicked on background stage
               if (e.target === e.target.getStage()) {
                 setSelectedBubbleId(null);
               }
@@ -208,6 +340,7 @@ export const ComicCanvas: React.FC<Props> = ({
                   stageHeight={STAGE_HEIGHT}
                   isSelected={selectedPanelId === panel.id}
                   selectedBubbleId={selectedBubbleId}
+                  panelEditMode={panelEditMode}
                   onSelectPanel={() => {
                     setSelectedPanelId(panel.id);
                     setSelectedBubbleId(null);
@@ -227,8 +360,8 @@ export const ComicCanvas: React.FC<Props> = ({
       {/* Side Inspector Panel */}
       <div className="w-full lg:w-80 flex flex-col gap-4">
         {selectedPanel && (
-          <div className="bg-slate-800 border border-slate-700 rounded-xl p-4 shadow-lg">
-            <div className="flex items-center justify-between mb-3 border-b border-slate-700 pb-2">
+          <div className="bg-slate-800 border border-slate-700 rounded-xl p-4 shadow-lg space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-700 pb-2">
               <h3 className="font-bold text-sm text-slate-200">
                 Panel {selectedPanel.order} Inspector
               </h3>
@@ -237,8 +370,123 @@ export const ComicCanvas: React.FC<Props> = ({
               </span>
             </div>
 
+            {/* Layout Geometry & Position Sliders */}
+            <div className="space-y-2 bg-slate-900/60 p-3 rounded-lg border border-slate-700/60">
+              <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1">
+                <Sliders className="w-3.5 h-3.5" />
+                Position & Dimensions (%)
+              </span>
+
+              <div className="grid grid-cols-2 gap-2 text-xs">
+                <div>
+                  <label className="text-[11px] text-slate-400 block mb-0.5">X: {selectedPanel.x}%</label>
+                  <input
+                    type="range"
+                    min={0}
+                    max={100 - selectedPanel.width}
+                    step={0.5}
+                    value={selectedPanel.x}
+                    onChange={(e) =>
+                      handleUpdatePanel({ ...selectedPanel, x: Number(e.target.value) })
+                    }
+                    className="w-full accent-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="text-[11px] text-slate-400 block mb-0.5">Y: {selectedPanel.y}%</label>
+                  <input
+                    type="range"
+                    min={0}
+                    max={100 - selectedPanel.height}
+                    step={0.5}
+                    value={selectedPanel.y}
+                    onChange={(e) =>
+                      handleUpdatePanel({ ...selectedPanel, y: Number(e.target.value) })
+                    }
+                    className="w-full accent-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="text-[11px] text-slate-400 block mb-0.5">Width: {selectedPanel.width}%</label>
+                  <input
+                    type="range"
+                    min={15}
+                    max={100 - selectedPanel.x}
+                    step={0.5}
+                    value={selectedPanel.width}
+                    onChange={(e) =>
+                      handleUpdatePanel({ ...selectedPanel, width: Number(e.target.value) })
+                    }
+                    className="w-full accent-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="text-[11px] text-slate-400 block mb-0.5">Height: {selectedPanel.height}%</label>
+                  <input
+                    type="range"
+                    min={15}
+                    max={100 - selectedPanel.y}
+                    step={0.5}
+                    value={selectedPanel.height}
+                    onChange={(e) =>
+                      handleUpdatePanel({ ...selectedPanel, height: Number(e.target.value) })
+                    }
+                    className="w-full accent-blue-500"
+                  />
+                </div>
+              </div>
+
+              {/* Quick Snap Presets */}
+              <div className="pt-2 flex flex-wrap gap-1 border-t border-slate-800">
+                <button
+                  onClick={() => handleUpdatePanel({ ...selectedPanel, x: 3, width: 94 })}
+                  className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-[10px] text-slate-300"
+                >
+                  Full Width
+                </button>
+                <button
+                  onClick={() => handleUpdatePanel({ ...selectedPanel, x: 3, width: 45.5 })}
+                  className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-[10px] text-slate-300"
+                >
+                  Left Half
+                </button>
+                <button
+                  onClick={() => handleUpdatePanel({ ...selectedPanel, x: 51.5, width: 45.5 })}
+                  className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-[10px] text-slate-300"
+                >
+                  Right Half
+                </button>
+              </div>
+            </div>
+
+            {/* Image Zoom Slider */}
+            {selectedPanel.imageUrl && (
+              <div className="bg-slate-900/60 p-2.5 rounded-lg border border-slate-700/60">
+                <div className="flex items-center justify-between text-xs mb-1">
+                  <span className="text-[11px] text-slate-400">Image Scale:</span>
+                  <span className="font-mono text-slate-300 text-[11px]">
+                    {Math.round((selectedPanel.imageScale || 1.0) * 100)}%
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min={0.5}
+                  max={3.0}
+                  step={0.05}
+                  value={selectedPanel.imageScale || 1.0}
+                  onChange={(e) =>
+                    handleUpdatePanel({
+                      ...selectedPanel,
+                      imageScale: Number(e.target.value),
+                    })
+                  }
+                  className="w-full accent-blue-500"
+                />
+              </div>
+            )}
+
             {/* Description */}
-            <div className="mb-3">
+            <div>
               <label className="text-xs text-slate-400 font-semibold mb-1 block">
                 Scene Description
               </label>
@@ -254,7 +502,7 @@ export const ComicCanvas: React.FC<Props> = ({
             </div>
 
             {/* Image Prompt */}
-            <div className="mb-4">
+            <div>
               <label className="text-xs text-slate-400 font-semibold mb-1 block">
                 Image Generation Prompt
               </label>
@@ -293,13 +541,18 @@ export const ComicCanvas: React.FC<Props> = ({
         {/* Bubble Inspector */}
         {selectedBubble && (
           <div className="bg-slate-800 border border-slate-700 rounded-xl p-4 shadow-lg">
-            <h3 className="font-bold text-sm text-slate-200 mb-3 border-b border-slate-700 pb-2">
-              Speech Bubble Text
-            </h3>
+            <div className="flex items-center justify-between mb-3 border-b border-slate-700 pb-2">
+              <h3 className="font-bold text-sm text-slate-200">Speech Bubble Text</h3>
+              <button
+                onClick={handleDeleteBubble}
+                className="text-xs text-rose-400 hover:text-rose-300 flex items-center gap-1"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                Delete
+              </button>
+            </div>
             <div className="mb-3">
-              <label className="text-xs text-slate-400 font-semibold mb-1 block">
-                Dialogue
-              </label>
+              <label className="text-xs text-slate-400 font-semibold mb-1 block">Dialogue</label>
               <textarea
                 value={selectedBubble.text}
                 onChange={(e) => {
@@ -316,9 +569,7 @@ export const ComicCanvas: React.FC<Props> = ({
 
             <div className="grid grid-cols-2 gap-2 mb-3">
               <div>
-                <label className="text-xs text-slate-400 font-semibold mb-1 block">
-                  Font Family
-                </label>
+                <label className="text-xs text-slate-400 font-semibold mb-1 block">Font Family</label>
                 <select
                   value={selectedBubble.fontFamily}
                   onChange={(e) => {
@@ -340,9 +591,7 @@ export const ComicCanvas: React.FC<Props> = ({
               </div>
 
               <div>
-                <label className="text-xs text-slate-400 font-semibold mb-1 block">
-                  Font Size
-                </label>
+                <label className="text-xs text-slate-400 font-semibold mb-1 block">Font Size</label>
                 <input
                   type="number"
                   value={selectedBubble.fontSize}
@@ -367,4 +616,3 @@ export const ComicCanvas: React.FC<Props> = ({
     </div>
   );
 };
-
